@@ -6,10 +6,42 @@ using System.Reflection.Metadata;
 using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
+using ChampDamageCalculator;
 using static System.Console;
 
 
 namespace ChampDamageCalculator{
+
+    public class Evelynn : Champion {
+        private Evelynn(List<Ability> abilities, StatLine statLine) : base(abilities, statLine);
+        public static Evelynn Base() {
+            StatLine statL = new StatLine(){
+
+                this.HP = new (642),
+                this.HP_PerLevel = new(98),
+                this.HP_Per5 = new(8.5),
+                this.HP_Per5PerLevel = new(0.75f),
+                this.Mana = new(315),
+                this.Mana_PerLevel = new(42),
+                this.Mana_Per5 = new (8.11),
+                this.Mana_Per5PerLevel = new (0.6),
+                this.Armor = new(37),
+                this.ArmorPerLevel = new(4.7f),
+                this.MagicResist = neww(32),
+                this.MagicResistPerLevel = new(2.05f),
+                this.baseAttackDamage = new(61),
+                this.AttackPerLevel = new(3),
+                this.AttackRange = new(125),
+                this.MoveSpeed = new (335),
+
+            };
+
+
+            return new Evelynn(new List<Ability>(){new HateSpike_Dart()}, statL);
+        }
+    
+
+    }
 
     public static class Utilities{
         public static T[] PermeateArray<T>(T value, uint size = 5){
@@ -37,18 +69,28 @@ namespace ChampDamageCalculator{
     }
 
     public abstract  class LiveEntity{
+        public StatLine Stats = new();
 
     }
 
     public abstract class Champion : LiveEntity {
+        public uint Level { set { 
+                if (value > Level ) {
+                    Level = value;
+                    
+                }
+            } 
+        }
+        public const uint MAX_LEVEL = 18;
         private List<Ability> _abilities;
-        private StatLine _statLine = new();
+        private StatLine _statLine { get { return Stats; } set { Stats = value;} }
+
+        public StatLine StatLine { get { return _stat; } set { Stats = value;}}
 
         public Champion(List<Ability> abilities, StatLine statLine){
             _abilities = abilities;
             _statLine = statLine;
         }
-
 
     }
 
@@ -113,9 +155,12 @@ namespace ChampDamageCalculator{
         Tenacity,
         BaseAttackDamage,
         BonusAttackDamage,
+        AttackPerLevel,
         AbilityPower,
         Armor,
+        ArmorPerLevel,
         MagicResist,
+        MagicResistPerLevel,
         AttackSpeed,
         AbilityHaste,
         CriticalStrikeChance,
@@ -141,10 +186,13 @@ namespace ChampDamageCalculator{
         public Omnivamp Omnivamp = new();
         public AttackRange AttackRange = new();
         public Tenacity Tenacity = new();
+        public AttackPerLevel attackPerLevel = new();
         public BaseAttackDamage BaseAttackDamage = new();
         public AbilityPower AbilityPower = new();
         public Armor Armor = new();
+        public ArmorPerLevel ArmorPerLevel = new();
         public MagicResist MagicResist = new();
+        public MagicResistPerLevel MagicResistPerLevel = new();
         public AttackSpeed AttackSpeed = new();
         public AbilityHaste AbilityHaste = new();
         public CriticalStrikeChance CriticalStrikeChance = new();
@@ -170,11 +218,14 @@ namespace ChampDamageCalculator{
     public partial class Omnivamp(float value=0) : Stat(value){ };
     public partial class AttackRange(float value=0) : Stat(value){ };
     public partial class Tenacity(float value=0) : Stat(value){ };
+    public partial class AttackPerLevel (float value=0) : Stat(value){ };
     public partial class BaseAttackDamage(float value=0) : Stat(value){ };
     public partial class BonusAttackDamage(float value=0) : Stat(value){ };
     public partial class AbilityPower(float value=0) : Stat(value){ };
     public partial class Armor(float value=0) : Stat(value){ };
+    public partial class ArmorPerLevel(float value=0) : Stat(value){ };
     public partial class MagicResist(float value=0) : Stat(value){ };
+    public partial class MagicResistPerLevel(float value=0) : Stat(value){ };
     public partial class AttackSpeed(float value=0) : Stat(value){ };
     public partial class AbilityHaste(float value=0) : Stat(value){ };
     public partial class CriticalStrikeChance(float value=0) : Stat(value){ };
@@ -251,10 +302,19 @@ namespace ChampDamageCalculator{
         protected uint[] _baseDamage;  
         protected float[] _damageMultiplier;
         protected StatType? _scalesWith;
-        protected Ability? OnPress;
-        protected Effect[]? effects;
+        protected Ability? _onPress;
+        protected Effect[]? _effects;
+        protected nint _rank = 0; 
+        public nint Rank {get { return _rank; } 
+            set {
+                if ( value <= _maxRank) {_rank = value;}
+                else _rank = _maxRank;
+            }
+        }
+    }
+        protected readonly nint _maxRank = 5;
 
-        public abstract int CalculateDamage(ref Champion champion, LiveEntity target);
+        public abstract uint CalculateDamage(ref Champion champion, ref LiveEntity target);
 
         protected Ability(){
 
@@ -279,6 +339,8 @@ namespace ChampDamageCalculator{
             _manaCost = [40,45,50,55,60];
             _damageMultiplier = Utilities.PermeateArray(0.25f);
             _scalesWith = StatType.AbilityPower;
+            HateSpike_Recast.numberOfUses = 3;
+            _onPress = HateSpike_Recast();
 
             var qMark = new Mark(CanEffect.EnemyChampion | CanEffect.Monsters | CanEffect.Minions, 
                     new Damage([15, 25, 35, 45, 55], 
@@ -287,20 +349,32 @@ namespace ChampDamageCalculator{
                         0.25f),
                     4,
                     Trigger.AutoAttacks | Trigger.Abilities);
-            effects = [qMark, qMark, qMark];
+            _effects = [qMark, qMark, qMark];
         }
 
-        public override int CalculateDamage(ref Champion champion, LiveEntity target)
+        public override uint CalculateDamage(ref Champion champion, ref LiveEntity target)
         {
-            throw new NotImplementedException();
+             if (Rank < 1) {
+                return 0;
+            }
+
+            uint preMitigationTotalDamage = 0;
+
+            preMitigationTotalDamage += _baseDamage[Rank];
+            preMitigationTotalDamage += _damageMultiplier * champion.StatLine.AbilityPower;
+
+            Console.WriteLine("PreMitDamage: {0}.", preMitigationTotalDamage);
+            
+            uint postMitigationTotalDamage = 0;
+
+            return postMitigationTotalDamage;
         }
     }
 
     public class HateSpike_Recast : Ability {
              
         public string Name { get { return _name; } private set { _name = value; } }
-        private uint numberOfUses = 3;
-
+        public static uint  numberOfUses = 3;
         public HateSpike_Recast() {
 
             _name = "Hate Spike";
@@ -309,12 +383,32 @@ namespace ChampDamageCalculator{
             _baseDamage = [25, 30, 35, 40, 45]; 
             _scalesWith = StatType.AbilityPower;
             _damageMultiplier = Utilities.PermeateArray(0.25f);
-            _manaCost = Utilities.PermeateArray(uint.Parse("0"));
+            _manaCost = Utilities.PermeateArray(uint.Parse("0")); 
         }
 
-        public override int CalculateDamage(ref Champion champion, LiveEntity target)
+        public override uint CalculateDamage(ref Champion champion, ref LiveEntity target)
         {
-            throw new NotImplementedException();
+            if (numberOfUses > 0) {
+                numberOfUses -= 1; 
+            }
+            else 
+            {
+                return 0;
+            }
+
+            if (Rank < 1) {
+                return 0;
+            }
+
+            uint preMitigationTotalDamage = 0;
+
+            preMitigationTotalDamage += _baseDamage[Rank];
+            preMitigationTotalDamage += _damageMultiplier * champion.StatLine.AbilityPower;
+
+            Console.WriteLine("PreMitDamage: {0}.", preMitigationTotalDamage);
+            
+            uint postMitigationTotalDamage = 0;
+
+            return postMitigationTotalDamage;
         }
     }
-} 
